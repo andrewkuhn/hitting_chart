@@ -2,6 +2,7 @@ import streamlit as st
 import psycopg2
 import pandas as pd
 import datetime
+import os
 
 # db setup
 def get_db_params():
@@ -89,7 +90,7 @@ if st.session_state.page == 'batter_date':
 elif st.session_state.page == 'hit_entry':
     st.header(f"Hit Entry for {st.session_state.batter} on {st.session_state.game_date}")
 
-    with st.form("hit_form"):
+    with st.form("hit_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
 
         with col1:
@@ -104,7 +105,7 @@ elif st.session_state.page == 'hit_entry':
         with col2:
             balls = st.number_input("Balls", min_value=0, max_value=3, step=1)
             strikes = st.number_input("Strikes", min_value=0, max_value=2, step=1)
-            outcome_label = st.selectbox("Outcome of the Play", ["", "Out", "On Base"])
+            outcome_label = st.radio("Outcome of the Play", ["", "Out", "On Base"], index=0)
 
             outcome = None
             out_detail = None
@@ -133,12 +134,12 @@ elif st.session_state.page == 'hit_entry':
         submitted = st.form_submit_button("Submit Hit")
 
         if submitted:
-            if not outcome_label:
+            if outcome_label == "":
                 st.warning("Please select an outcome.")
             elif outcome_label == "Out" and not out_detail:
                 st.warning("Please select how the batter got out.")
             elif outcome_label == "On Base" and not on_base_detail:
-                st.warning("Please select how the batter got on base.")
+                st.warning("Please select how the batter reached base.")
             elif direction == "":
                 st.warning("Please select a hit direction.")
             else:
@@ -186,10 +187,7 @@ elif st.session_state.page == 'hit_entry':
             st.info("No entries for this game yet.")
         else:
             df["Play #"] = range(1, len(df) + 1)
-            df = df[[
-                "Play #", "inning", "pa_number", "outs", "balls", "strikes",
-                "outcome", "out_detail", "on_base_detail", "direction"
-            ]]
+            df = df[["Play #", "inning", "pa_number", "outs", "balls", "strikes", "outcome", "out_detail", "on_base_detail", "direction"]]
             st.dataframe(
                 df.reset_index(drop=True),
                 use_container_width=True,
