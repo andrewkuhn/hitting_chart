@@ -2,7 +2,6 @@ import streamlit as st
 import psycopg2
 import pandas as pd
 import datetime
-import os
 
 # db setup
 def get_db_params():
@@ -18,7 +17,6 @@ def get_connection():
     params = get_db_params()
     return psycopg2.connect(**params)
 
-# table check
 def ensure_tables():
     conn = get_connection()
     cur = conn.cursor()
@@ -50,7 +48,6 @@ def ensure_tables():
 
 ensure_tables()
 
-# batters db
 def get_batters():
     conn = get_connection()
     cur = conn.cursor()
@@ -66,6 +63,8 @@ if 'batter' not in st.session_state:
     st.session_state.batter = None
 if 'game_date' not in st.session_state:
     st.session_state.game_date = datetime.date.today()
+if 'outcome_label' not in st.session_state:
+    st.session_state.outcome_label = ""
 
 st.title("Hitting Chart")
 
@@ -90,6 +89,28 @@ if st.session_state.page == 'batter_date':
 elif st.session_state.page == 'hit_entry':
     st.header(f"Hit Entry for {st.session_state.batter} on {st.session_state.game_date}")
 
+    # Outcome selector (outside form, reactive)
+    st.markdown("### Outcome of the Play")
+    selected = st.radio("Select Outcome Type", ["", "Out", "On Base"], index=["", "Out", "On Base"].index(st.session_state.outcome_label))
+    st.session_state.outcome_label = selected
+
+    outcome = None
+    out_detail = None
+    on_base_detail = None
+
+    if st.session_state.outcome_label == "Out":
+        outcome = False
+        out_detail = st.selectbox("How did the batter get out?", [
+            "", "Strikeout", "Groundout", "Flyout", "Lineout",
+            "Popup", "Fielder's Choice", "Double Play", "Other"
+        ])
+    elif st.session_state.outcome_label == "On Base":
+        outcome = True
+        on_base_detail = st.selectbox("How did the batter reach base?", [
+            "", "Single", "Double", "Triple", "Home Run",
+            "Walk", "Hit By Pitch", "Error", "Fielder’s Choice (Safe)"
+        ])
+
     with st.form("hit_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
 
@@ -98,31 +119,13 @@ elif st.session_state.page == 'hit_entry':
             pa_number = st.number_input("Plate Appearance Number", min_value=1, step=1)
             outs = st.number_input("Outs", min_value=0, max_value=2, step=1)
             men_on_base = st.selectbox("Men on Base", [
-                "None", "1B", "2B", "3B", 
+                "None", "1B", "2B", "3B",
                 "1B & 2B", "1B & 3B", "2B & 3B", "Bases Loaded"
             ])
 
         with col2:
             balls = st.number_input("Balls", min_value=0, max_value=3, step=1)
             strikes = st.number_input("Strikes", min_value=0, max_value=2, step=1)
-            outcome_label = st.radio("Outcome of the Play", ["", "Out", "On Base"], index=0)
-
-            outcome = None
-            out_detail = None
-            on_base_detail = None
-
-            if outcome_label == "Out":
-                outcome = False
-                out_detail = st.selectbox("How did the batter get out?", [
-                    "", "Strikeout", "Groundout", "Flyout", "Lineout", 
-                    "Popup", "Fielder's Choice", "Double Play", "Other"
-                ])
-            elif outcome_label == "On Base":
-                outcome = True
-                on_base_detail = st.selectbox("How did the batter reach base?", [
-                    "", "Single", "Double", "Triple", "Home Run", 
-                    "Walk", "Hit By Pitch", "Error", "Fielder’s Choice (Safe)"
-                ])
 
         st.markdown("### Direction of Hit")
         direction = st.radio(
@@ -134,13 +137,13 @@ elif st.session_state.page == 'hit_entry':
         submitted = st.form_submit_button("Submit Hit")
 
         if submitted:
-            if outcome_label == "":
-                st.warning("Please select an outcome.")
-            elif outcome_label == "Out" and not out_detail:
+            if not st.session_state.outcome_label:
+                st.warning("Please select an outcome type.")
+            elif st.session_state.outcome_label == "Out" and not out_detail:
                 st.warning("Please select how the batter got out.")
-            elif outcome_label == "On Base" and not on_base_detail:
+            elif st.session_state.outcome_label == "On Base" and not on_base_detail:
                 st.warning("Please select how the batter reached base.")
-            elif direction == "":
+            elif not direction:
                 st.warning("Please select a hit direction.")
             else:
                 try:
@@ -168,11 +171,15 @@ elif st.session_state.page == 'hit_entry':
                     conn.commit()
                     conn.close()
                     st.success("Hit saved!")
+
+                    # Reset outcome selection after each submission
+                    st.session_state.outcome_label = ""
                     st.rerun()
 
                 except Exception as e:
                     st.error(f"Error saving hit: {e}")
 
+    # Table of game data
     try:
         conn = get_connection()
         df = pd.read_sql("""
