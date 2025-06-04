@@ -4,7 +4,7 @@ import pandas as pd
 import datetime
 import os
 
-# ------------------- DB SETUP -------------------
+# db setup
 def get_db_params():
     return {
         "dbname": st.secrets["DB_NAME"],
@@ -15,8 +15,10 @@ def get_db_params():
     }
 
 def get_connection():
-    return psycopg2.connect(**get_db_params())
+    params = get_db_params()
+    return psycopg2.connect(**params)
 
+# table check
 def ensure_tables():
     conn = get_connection()
     cur = conn.cursor()
@@ -48,32 +50,32 @@ def ensure_tables():
 
 ensure_tables()
 
-# ------------------- SESSION STATE -------------------
+# batters db
+def get_batters():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM batters ORDER BY name")
+    batters = [row[0] for row in cur.fetchall()]
+    conn.close()
+    return batters
+
+# session state setup
 if 'page' not in st.session_state:
     st.session_state.page = 'batter_date'
 if 'batter' not in st.session_state:
     st.session_state.batter = None
 if 'game_date' not in st.session_state:
     st.session_state.game_date = datetime.date.today()
-if 'outcome_label' not in st.session_state:
-    st.session_state.outcome_label = ""
+if 'outcome_type' not in st.session_state:
+    st.session_state.outcome_type = ""
 if 'direction' not in st.session_state:
     st.session_state.direction = None
 
-# ------------------- PAGE 1 -------------------
 st.title("Hitting Chart")
 
+# page 1
 if st.session_state.page == 'batter_date':
     st.header("Select Batter and Date")
-
-    # Fetch batters from DB
-    def get_batters():
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM batters ORDER BY name")
-        batters = [row[0] for row in cur.fetchall()]
-        conn.close()
-        return batters
 
     batters = get_batters()
     batter = st.selectbox("Select Batter", options=[""] + batters)
@@ -88,70 +90,77 @@ if st.session_state.page == 'batter_date':
             st.session_state.page = 'hit_entry'
             st.rerun()
 
-# ------------------- PAGE 2 -------------------
+# page 2
 elif st.session_state.page == 'hit_entry':
     st.header(f"Hit Entry for {st.session_state.batter} on {st.session_state.game_date}")
 
-    col1, col2 = st.columns(2)
+    with st.form("hit_form"):
+        col1, col2 = st.columns(2)
 
-    with col2:
-        # Outcome selection outside the form to allow immediate rerun
-        st.markdown("### Outcome of the Play")
-        outcome_choice = st.radio("Select Outcome Type", ["", "Out", "On Base"], index=["", "Out", "On Base"].index(st.session_state.outcome_label), key="outcome_radio")
-        st.session_state.outcome_label = outcome_choice
-
-        out_detail = None
-        on_base_detail = None
-
-        if outcome_choice == "Out":
-            out_detail = st.selectbox("How did the batter get out?", [
-                "", "Strikeout", "Groundout", "Flyout", "Lineout",
-                "Popup", "Fielder's Choice", "Double Play", "Other"
-            ])
-        elif outcome_choice == "On Base":
-            on_base_detail = st.selectbox("How did the batter reach base?", [
-                "", "Single", "Double", "Triple", "Home Run",
-                "Walk", "Hit By Pitch", "Error", "Fielder’s Choice (Safe)"
-            ])
-
-    # Direction buttons
-    st.markdown("### Direction of Hit")
-    colA, colB, colC, colD, colE, colF, colG = st.columns(7)
-    with colA: if st.button("Left"): st.session_state.direction = "Left"
-    with colB: if st.button("Left-Center"): st.session_state.direction = "Left-Center"
-    with colC: if st.button("Center"): st.session_state.direction = "Center"
-    with colD: if st.button("Right-Center"): st.session_state.direction = "Right-Center"
-    with colE: if st.button("Right"): st.session_state.direction = "Right"
-    with colF: if st.button("Infield"): st.session_state.direction = "Infield"
-    with colG: if st.button("Foul"): st.session_state.direction = "Foul"
-
-    # Hit form (separate from outcome radio so outcome reacts instantly)
-    with st.form("hit_form", clear_on_submit=True):
         with col1:
             inning = st.number_input("Inning", min_value=1, max_value=20, step=1)
             pa_number = st.number_input("Plate Appearance Number", min_value=1, step=1)
             outs = st.number_input("Outs", min_value=0, max_value=2, step=1)
-            men_on_base = st.selectbox("Men on Base", [
-                "None", "1B", "2B", "3B",
-                "1B & 2B", "1B & 3B", "2B & 3B", "Bases Loaded"
-            ])
+            men_on_base = st.selectbox("Men on Base", ["None", "1B", "2B", "3B", "1B & 2B", "1B & 3B", "2B & 3B", "Bases Loaded"])
             balls = st.number_input("Balls", min_value=0, max_value=3, step=1)
             strikes = st.number_input("Strikes", min_value=0, max_value=2, step=1)
+
+        with col2:
+            outcome_type = st.radio("Outcome of the Play", options=["", "Out", "On Base"], index=0)
+
+            if outcome_type != st.session_state.outcome_type:
+                st.session_state.outcome_type = outcome_type
+
+            outcome = None
+            out_detail = None
+            on_base_detail = None
+
+            if st.session_state.outcome_type == "Out":
+                outcome = False
+                out_detail = st.selectbox("How did the batter get out?", ["", "Strikeout", "Groundout", "Flyout", "Lineout", "Popup", "Fielder's Choice", "Double Play", "Other"])
+
+            elif st.session_state.outcome_type == "On Base":
+                outcome = True
+                on_base_detail = st.selectbox("How did the batter reach base?", ["", "Single", "Double", "Triple", "Home Run", "Walk", "Hit By Pitch", "Error", "Fielder’s Choice (Safe)"])
+
+        # Direction buttons
+        st.markdown("### Direction of Hit")
+        colA, colB, colC, colD, colE, colF, colG = st.columns(7)
+        with colA:
+            if st.button("Left"):
+                st.session_state.direction = "Left"
+        with colB:
+            if st.button("Left-Center"):
+                st.session_state.direction = "Left-Center"
+        with colC:
+            if st.button("Center"):
+                st.session_state.direction = "Center"
+        with colD:
+            if st.button("Right-Center"):
+                st.session_state.direction = "Right-Center"
+        with colE:
+            if st.button("Right"):
+                st.session_state.direction = "Right"
+        with colF:
+            if st.button("Infield"):
+                st.session_state.direction = "Infield"
+        with colG:
+            if st.button("Foul"):
+                st.session_state.direction = "Foul"
 
         submitted = st.form_submit_button("Submit Hit")
 
         if submitted:
-            if not outcome_choice:
+            if not st.session_state.outcome_type:
                 st.warning("Please select an outcome.")
             else:
                 try:
-                    outcome_bool = True if outcome_choice == "On Base" else False
                     conn = get_connection()
                     cur = conn.cursor()
                     cur.execute("""
                         INSERT INTO pitches_faced (
-                            batter, date, inning, pa_number, outs, men_on_base,
-                            balls, strikes, outcome, out_detail, on_base_detail, direction
+                            batter, date, inning, pa_number, outs, men_on_base, balls, strikes,
+                            outcome, out_detail, on_base_detail, direction
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         st.session_state.batter,
@@ -162,7 +171,7 @@ elif st.session_state.page == 'hit_entry':
                         men_on_base,
                         balls,
                         strikes,
-                        outcome_bool,
+                        outcome,
                         out_detail,
                         on_base_detail,
                         st.session_state.direction
@@ -171,15 +180,15 @@ elif st.session_state.page == 'hit_entry':
                     conn.close()
                     st.success("Hit saved!")
 
-                    # Reset outcome and direction
-                    st.session_state.outcome_label = ""
+                    # Reset outcome type and direction
+                    st.session_state.outcome_type = ""
                     st.session_state.direction = None
                     st.rerun()
 
                 except Exception as e:
                     st.error(f"Error saving hit: {e}")
 
-    # Display game log
+    # Show saved plays for the game
     try:
         conn = get_connection()
         df = pd.read_sql("""
