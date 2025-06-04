@@ -29,7 +29,7 @@ def ensure_tables():
         )
     """)
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS hits (
+        CREATE TABLE IF NOT EXISTS pitches_faced (
             id SERIAL PRIMARY KEY,
             batter TEXT NOT NULL,
             date DATE NOT NULL,
@@ -151,7 +151,7 @@ elif st.session_state.page == 'hit_entry':
                     conn = get_connection()
                     cur = conn.cursor()
                     cur.execute("""
-                        INSERT INTO hits (batter, date, inning, pa_number, outs, men_on_base, balls, strikes, outcome, out_detail, on_base_detail, direction)
+                        INSERT INTO pitches_faced (batter, date, inning, pa_number, outs, men_on_base, balls, strikes, outcome, out_detail, on_base_detail, direction)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         st.session_state.batter,
@@ -179,7 +179,7 @@ elif st.session_state.page == 'hit_entry':
         conn = get_connection()
         df = pd.read_sql("""
             SELECT id, inning, pa_number, outs, balls, strikes, outcome, out_detail, on_base_detail, direction
-            FROM hits
+            FROM pitches_faced
             WHERE batter = %s AND date = %s
             ORDER BY id ASC
         """, conn, params=(st.session_state.batter, st.session_state.game_date))
@@ -197,7 +197,7 @@ elif st.session_state.page == 'hit_entry':
             )
 
     except Exception as e:
-        st.error(f"Error loading hits: {e}")
+        st.error(f"Error loading pitches_faced: {e}")
 
     if st.button("Back to Batter & Date"):
         st.session_state.page = 'batter_date'
