@@ -4,7 +4,7 @@ import pandas as pd
 import datetime
 import os
 
-# db setup
+# ------------------- DB SETUP -------------------
 def get_db_params():
     return {
         "dbname": st.secrets["DB_NAME"],
@@ -18,7 +18,6 @@ def get_connection():
     params = get_db_params()
     return psycopg2.connect(**params)
 
-# table check
 def ensure_tables():
     conn = get_connection()
     cur = conn.cursor()
@@ -29,7 +28,7 @@ def ensure_tables():
         )
     """)
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS hits (
+        CREATE TABLE IF NOT EXISTS pitches_faced (
             id SERIAL PRIMARY KEY,
             batter TEXT NOT NULL,
             date DATE NOT NULL,
@@ -50,7 +49,7 @@ def ensure_tables():
 
 ensure_tables()
 
-# batters db
+# ------------------- BATTER LIST -------------------
 def get_batters():
     conn = get_connection()
     cur = conn.cursor()
@@ -59,17 +58,19 @@ def get_batters():
     conn.close()
     return batters
 
-# session state setup
+# ------------------- SESSION STATE -------------------
 if 'page' not in st.session_state:
     st.session_state.page = 'batter_date'
 if 'batter' not in st.session_state:
     st.session_state.batter = None
 if 'game_date' not in st.session_state:
     st.session_state.game_date = datetime.date.today()
+if 'outcome_label' not in st.session_state:
+    st.session_state.outcome_label = ""
 
+# ------------------- PAGE 1 -------------------
 st.title("Hitting Chart")
 
-# page 1
 if st.session_state.page == 'batter_date':
     st.header("Select Batter and Date")
 
@@ -86,72 +87,80 @@ if st.session_state.page == 'batter_date':
             st.session_state.page = 'hit_entry'
             st.rerun()
 
-# page 2
+# ------------------- PAGE 2 -------------------
 elif st.session_state.page == 'hit_entry':
     st.header(f"Hit Entry for {st.session_state.batter} on {st.session_state.game_date}")
 
-    with st.form("hit_form"):
+    with st.form("hit_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
 
         with col1:
             inning = st.number_input("Inning", min_value=1, max_value=20, step=1)
             pa_number = st.number_input("Plate Appearance Number", min_value=1, step=1)
             outs = st.number_input("Outs", min_value=0, max_value=2, step=1)
-            men_on_base = st.selectbox("Men on Base", ["None", "1B", "2B", "3B", "1B & 2B", "1B & 3B", "2B & 3B", "Bases Loaded"])
+            men_on_base = st.selectbox("Men on Base", [
+                "None", "1B", "2B", "3B",
+                "1B & 2B", "1B & 3B", "2B & 3B", "Bases Loaded"
+            ])
 
         with col2:
             balls = st.number_input("Balls", min_value=0, max_value=3, step=1)
             strikes = st.number_input("Strikes", min_value=0, max_value=2, step=1)
-            outcome_label = st.selectbox("Outcome of the Play", ["", "Out", "On Base"])
+
+            # Outcome radio selector inside col2
+            st.markdown("### Outcome of the Play")
+            selected = st.radio("Select Outcome Type", ["", "Out", "On Base"],
+                                index=["", "Out", "On Base"].index(st.session_state.outcome_label),
+                                key="outcome_radio")
+            st.session_state.outcome_label = selected
 
             outcome = None
             out_detail = None
             on_base_detail = None
 
-            if outcome_label == "Out":
+            if selected == "Out":
+                out_detail = st.selectbox("How did the batter get out?", [
+                    "", "Strikeout", "Groundout", "Flyout", "Lineout",
+                    "Popup", "Fielder's Choice", "Double Play", "Other"
+                ])
                 outcome = False
-                out_detail = st.selectbox("How did the batter get out?", ["", "Strikeout", "Groundout", "Flyout", "Lineout", "Popup", "Fielder's Choice", "Double Play", "Other"])
-            elif outcome_label == "On Base":
+            elif selected == "On Base":
+                on_base_detail = st.selectbox("How did the batter reach base?", [
+                    "", "Single", "Double", "Triple", "Home Run",
+                    "Walk", "Hit By Pitch", "Error", "Fielder’s Choice (Safe)"
+                ])
                 outcome = True
-                on_base_detail = st.selectbox("How did the batter reach base?", ["", "Single", "Double", "Triple", "Home Run", "Walk", "Hit By Pitch", "Error", "Fielder’s Choice (Safe)"])
 
+        # Direction buttons
         st.markdown("### Direction of Hit")
         col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
-
         direction = None
         with col1:
-            if st.button("Left"):
-                direction = "Left"
+            if st.form_submit_button("Left"): direction = "Left"
         with col2:
-            if st.button("Left-Center"):
-                direction = "Left-Center"
+            if st.form_submit_button("Left-Center"): direction = "Left-Center"
         with col3:
-            if st.button("Center"):
-                direction = "Center"
+            if st.form_submit_button("Center"): direction = "Center"
         with col4:
-            if st.button("Right-Center"):
-                direction = "Right-Center"
+            if st.form_submit_button("Right-Center"): direction = "Right-Center"
         with col5:
-            if st.button("Right"):
-                direction = "Right"
+            if st.form_submit_button("Right"): direction = "Right"
         with col6:
-            if st.button("Infield"):
-                direction = "Infield"
+            if st.form_submit_button("Infield"): direction = "Infield"
         with col7:
-            if st.button("Foul"):
-                direction = "Foul"
+            if st.form_submit_button("Foul"): direction = "Foul"
 
         submitted = st.form_submit_button("Submit Hit")
 
         if submitted:
-            if not outcome_label:
+            if not selected:
                 st.warning("Please select an outcome.")
             else:
                 try:
                     conn = get_connection()
                     cur = conn.cursor()
                     cur.execute("""
-                        INSERT INTO hits (batter, date, inning, pa_number, outs, men_on_base, balls, strikes, outcome, out_detail, on_base_detail, direction)
+                        INSERT INTO pitches_faced (batter, date, inning, pa_number, outs, men_on_base, balls, strikes, outcome, out_detail, on_base_detail, direction)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         st.session_state.batter,
@@ -170,16 +179,20 @@ elif st.session_state.page == 'hit_entry':
                     conn.commit()
                     conn.close()
                     st.success("Hit saved!")
+
+                    # Reset radio button
+                    st.session_state.outcome_label = ""
                     st.rerun()
 
                 except Exception as e:
                     st.error(f"Error saving hit: {e}")
 
+    # Display game log
     try:
         conn = get_connection()
         df = pd.read_sql("""
             SELECT id, inning, pa_number, outs, balls, strikes, outcome, out_detail, on_base_detail, direction
-            FROM hits
+            FROM pitches_faced
             WHERE batter = %s AND date = %s
             ORDER BY id ASC
         """, conn, params=(st.session_state.batter, st.session_state.game_date))
@@ -190,14 +203,10 @@ elif st.session_state.page == 'hit_entry':
         else:
             df["Play #"] = range(1, len(df) + 1)
             df = df[["Play #", "inning", "pa_number", "outs", "balls", "strikes", "outcome", "out_detail", "on_base_detail", "direction"]]
-            st.dataframe(
-                df.reset_index(drop=True),
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(df.reset_index(drop=True), use_container_width=True, hide_index=True)
 
     except Exception as e:
-        st.error(f"Error loading hits: {e}")
+        st.error(f"Error loading pitches_faced: {e}")
 
     if st.button("Back to Batter & Date"):
         st.session_state.page = 'batter_date'
