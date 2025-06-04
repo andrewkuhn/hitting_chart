@@ -1,17 +1,18 @@
 import streamlit as st
 import psycopg2
-from datetime import datetime
+import pandas as pd
+import datetime
+import os
 
 # --- DB Connection ---
-def get_connection():
-    return psycopg2.connect(
-        host="your_host",
-        database="your_db",
-        user="your_user",
-        password="your_password",
-        port=5432
-    )
-
+def get_db_params():
+    return {
+        "dbname": st.secrets["DB_NAME"],
+        "user": st.secrets["DB_USER"],
+        "password": st.secrets["DB_PASSWORD"],
+        "host": st.secrets["DB_HOST"],
+        "port": st.secrets["DB_PORT"],
+    }
 st.title("Hitting Chart Tracker")
 
 # --- Basic Inputs ---
