@@ -2,6 +2,7 @@ import streamlit as st
 import psycopg2
 import pandas as pd
 import datetime
+import os
 
 # db setup
 def get_db_params():
@@ -17,6 +18,7 @@ def get_connection():
     params = get_db_params()
     return psycopg2.connect(**params)
 
+# table check
 def ensure_tables():
     conn = get_connection()
     cur = conn.cursor()
@@ -27,7 +29,7 @@ def ensure_tables():
         )
     """)
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS pitches_faced (
+        CREATE TABLE IF NOT EXISTS hits (
             id SERIAL PRIMARY KEY,
             batter TEXT NOT NULL,
             date DATE NOT NULL,
@@ -48,6 +50,7 @@ def ensure_tables():
 
 ensure_tables()
 
+# batters db
 def get_batters():
     conn = get_connection()
     cur = conn.cursor()
@@ -63,8 +66,6 @@ if 'batter' not in st.session_state:
     st.session_state.batter = None
 if 'game_date' not in st.session_state:
     st.session_state.game_date = datetime.date.today()
-if 'outcome_label' not in st.session_state:
-    st.session_state.outcome_label = ""
 
 st.title("Hitting Chart")
 
@@ -89,71 +90,69 @@ if st.session_state.page == 'batter_date':
 elif st.session_state.page == 'hit_entry':
     st.header(f"Hit Entry for {st.session_state.batter} on {st.session_state.game_date}")
 
-    # Outcome selector (outside form, reactive)
-    st.markdown("### Outcome of the Play")
-    selected = st.radio("Select Outcome Type", ["", "Out", "On Base"], index=["", "Out", "On Base"].index(st.session_state.outcome_label))
-    st.session_state.outcome_label = selected
-
-    outcome = None
-    out_detail = None
-    on_base_detail = None
-
-    if st.session_state.outcome_label == "Out":
-        outcome = False
-        out_detail = st.selectbox("How did the batter get out?", [
-            "", "Strikeout", "Groundout", "Flyout", "Lineout",
-            "Popup", "Fielder's Choice", "Double Play", "Other"
-        ])
-    elif st.session_state.outcome_label == "On Base":
-        outcome = True
-        on_base_detail = st.selectbox("How did the batter reach base?", [
-            "", "Single", "Double", "Triple", "Home Run",
-            "Walk", "Hit By Pitch", "Error", "Fielder’s Choice (Safe)"
-        ])
-
-    with st.form("hit_form", clear_on_submit=True):
+    with st.form("hit_form"):
         col1, col2 = st.columns(2)
 
         with col1:
             inning = st.number_input("Inning", min_value=1, max_value=20, step=1)
             pa_number = st.number_input("Plate Appearance Number", min_value=1, step=1)
             outs = st.number_input("Outs", min_value=0, max_value=2, step=1)
-            men_on_base = st.selectbox("Men on Base", [
-                "None", "1B", "2B", "3B",
-                "1B & 2B", "1B & 3B", "2B & 3B", "Bases Loaded"
-            ])
+            men_on_base = st.selectbox("Men on Base", ["None", "1B", "2B", "3B", "1B & 2B", "1B & 3B", "2B & 3B", "Bases Loaded"])
 
         with col2:
             balls = st.number_input("Balls", min_value=0, max_value=3, step=1)
             strikes = st.number_input("Strikes", min_value=0, max_value=2, step=1)
+            outcome_label = st.selectbox("Outcome of the Play", ["", "Out", "On Base"])
+
+            outcome = None
+            out_detail = None
+            on_base_detail = None
+
+            if outcome_label == "Out":
+                outcome = False
+                out_detail = st.selectbox("How did the batter get out?", ["", "Strikeout", "Groundout", "Flyout", "Lineout", "Popup", "Fielder's Choice", "Double Play", "Other"])
+            elif outcome_label == "On Base":
+                outcome = True
+                on_base_detail = st.selectbox("How did the batter reach base?", ["", "Single", "Double", "Triple", "Home Run", "Walk", "Hit By Pitch", "Error", "Fielder’s Choice (Safe)"])
 
         st.markdown("### Direction of Hit")
-        direction = st.radio(
-            "Select Hit Direction:",
-            ["", "Left", "Left-Center", "Center", "Right-Center", "Right", "Infield", "Foul"],
-            horizontal=True
-        )
+        col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
+
+        direction = None
+        with col1:
+            if st.button("Left"):
+                direction = "Left"
+        with col2:
+            if st.button("Left-Center"):
+                direction = "Left-Center"
+        with col3:
+            if st.button("Center"):
+                direction = "Center"
+        with col4:
+            if st.button("Right-Center"):
+                direction = "Right-Center"
+        with col5:
+            if st.button("Right"):
+                direction = "Right"
+        with col6:
+            if st.button("Infield"):
+                direction = "Infield"
+        with col7:
+            if st.button("Foul"):
+                direction = "Foul"
 
         submitted = st.form_submit_button("Submit Hit")
 
         if submitted:
-            if not st.session_state.outcome_label:
-                st.warning("Please select an outcome type.")
-            elif st.session_state.outcome_label == "Out" and not out_detail:
-                st.warning("Please select how the batter got out.")
-            elif st.session_state.outcome_label == "On Base" and not on_base_detail:
-                st.warning("Please select how the batter reached base.")
-            elif not direction:
-                st.warning("Please select a hit direction.")
+            if not outcome_label:
+                st.warning("Please select an outcome.")
             else:
                 try:
                     conn = get_connection()
                     cur = conn.cursor()
                     cur.execute("""
-                        INSERT INTO pitches_faced (
-                            batter, date, inning, pa_number, outs, men_on_base,
-                            balls, strikes, outcome, out_detail, on_base_detail, direction
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        INSERT INTO hits (batter, date, inning, pa_number, outs, men_on_base, balls, strikes, outcome, out_detail, on_base_detail, direction)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         st.session_state.batter,
                         st.session_state.game_date,
@@ -171,20 +170,16 @@ elif st.session_state.page == 'hit_entry':
                     conn.commit()
                     conn.close()
                     st.success("Hit saved!")
-
-                    # Reset outcome selection after each submission
-                    st.session_state.outcome_label = ""
                     st.rerun()
 
                 except Exception as e:
                     st.error(f"Error saving hit: {e}")
 
-    # Table of game data
     try:
         conn = get_connection()
         df = pd.read_sql("""
             SELECT id, inning, pa_number, outs, balls, strikes, outcome, out_detail, on_base_detail, direction
-            FROM pitches_faced
+            FROM hits
             WHERE batter = %s AND date = %s
             ORDER BY id ASC
         """, conn, params=(st.session_state.batter, st.session_state.game_date))
@@ -202,7 +197,7 @@ elif st.session_state.page == 'hit_entry':
             )
 
     except Exception as e:
-        st.error(f"Error loading pitches_faced: {e}")
+        st.error(f"Error loading hits: {e}")
 
     if st.button("Back to Batter & Date"):
         st.session_state.page = 'batter_date'
